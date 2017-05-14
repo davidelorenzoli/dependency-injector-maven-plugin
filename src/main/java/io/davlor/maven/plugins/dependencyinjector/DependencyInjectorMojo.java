@@ -1,7 +1,7 @@
 package io.davlor.maven.plugins.dependencyinjector;
 
 import io.davlor.maven.plugins.dependencyinjector.converter.Artifact2JnlpConverter;
-import io.davlor.maven.plugins.dependencyinjector.converter.ArtifactConverter;
+import io.davlor.maven.plugins.dependencyinjector.utils.DependencyUtils;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -19,7 +19,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 
 @Mojo(name = "inject", defaultPhase = LifecyclePhase.PROCESS_SOURCES)
@@ -36,10 +39,10 @@ public class DependencyInjectorMojo extends AbstractMojo {
     @Parameter(property = "targetFile", readonly = true)
     private File targetFile;
 
-    @Parameter(property = "dependenciesPlaceholder", defaultValue = "%ok%", readonly = true)
+    @Parameter(property = "dependenciesPlaceholder", defaultValue = "%dependencies%", readonly = true)
     private String dependenciesPlaceholder;
 
-    @Parameter(property = "dependenciesUrlPath", defaultValue = "/repository5", readonly = true)
+    @Parameter(property = "dependenciesUrlPath", defaultValue = "/", readonly = true)
     private String dependenciesUrlPath;
 
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -53,11 +56,12 @@ public class DependencyInjectorMojo extends AbstractMojo {
         });
 
         try {
-            DependencyResolutionResult dependencies = projectDependenciesResolver.resolve(dependencyResolutionRequest);
+            List<Dependency> dependencies = projectDependenciesResolver.resolve(dependencyResolutionRequest).getDependencies();
+            Path destination = Paths.get(project.getBuild().getDirectory(), "dependencies");
 
-            saveDependencies(dependencies);
+            new DependencyUtils(getLog()).saveDependencies(dependencies, destination);
 
-            StringBuilder dependenciesString = getDependenciesAsString(dependencies);
+            String dependenciesString = new Artifact2JnlpConverter(Paths.get(dependenciesUrlPath)).asString(dependencies);
 
             createWriteFileWithDependencies(dependenciesString);
         }
@@ -69,31 +73,7 @@ public class DependencyInjectorMojo extends AbstractMojo {
         }
     }
 
-    private void saveDependencies(DependencyResolutionResult dependencies) throws IOException {
-        Path outputPath = Paths.get(project.getBuild().getDirectory(), "dependencies");
-        Files.createDirectories(outputPath);
-
-        for (Dependency dependency : dependencies.getDependencies()) {
-            File artifactFile = dependency.getArtifact().getFile();
-            Path outputFilePath = outputPath.resolve(artifactFile.getName());
-
-            getLog().info(artifactFile + " -> " + outputFilePath);
-            Files.copy(artifactFile.toPath(), outputFilePath, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private StringBuilder getDependenciesAsString(DependencyResolutionResult dependencies) {
-        ArtifactConverter converter = new Artifact2JnlpConverter(Paths.get(dependenciesUrlPath));
-        StringBuilder dependenciesString = new StringBuilder();
-
-        for (Dependency dependency : dependencies.getDependencies()) {
-            dependenciesString.append(converter.convert(dependency));
-            dependenciesString.append(System.lineSeparator());
-        }
-        return dependenciesString;
-    }
-
-    private void createWriteFileWithDependencies(StringBuilder dependenciesString) throws IOException {
+    private void createWriteFileWithDependencies(String dependenciesString) throws IOException {
         Path targetFilePath = targetFile.toPath();
         Path targetFileWithDependenciesPath = Paths.get(project.getBuild().getDirectory(), targetFile.getName());
         Charset charset = StandardCharsets.UTF_8;
