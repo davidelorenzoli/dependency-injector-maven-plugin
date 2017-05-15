@@ -59,6 +59,10 @@
                     <targetFile>${project.build.testOutputDirectory}/testTargetFile.txt</targetFile>
                     <dependenciesPlaceholder>%dependencies%</dependenciesPlaceholder>
                     <dependenciesUrlPath>/repository5</dependenciesUrlPath>
+                    <dependencyType>JNLP</dependencyType>
+                    <excludeScope>
+                        <param>test</param>
+                    </excludeScope>
                 </configuration>
             </plugin>
         </plugins>

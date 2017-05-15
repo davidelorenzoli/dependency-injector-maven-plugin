@@ -1,7 +1,8 @@
 package io.davlor.maven.plugins.dependencyinjector;
 
-import io.davlor.maven.plugins.dependencyinjector.converter.Artifact2JnlpConverter;
-import io.davlor.maven.plugins.dependencyinjector.utils.DependencyUtils;
+import io.davlor.maven.plugins.dependencyinjector.converter.ArtifactConverter;
+import io.davlor.maven.plugins.dependencyinjector.converter.ArtifactConverterFactory;
+import io.davlor.maven.plugins.dependencyinjector.model.DependencyType;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -23,7 +24,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 @Mojo(name = "inject", defaultPhase = LifecyclePhase.PROCESS_SOURCES)
 public class DependencyInjectorMojo extends AbstractMojo {
@@ -45,23 +48,28 @@ public class DependencyInjectorMojo extends AbstractMojo {
     @Parameter(property = "dependenciesUrlPath", defaultValue = "/", readonly = true)
     private String dependenciesUrlPath;
 
+    @Parameter(property = "dependencyType", defaultValue = "JNLP", readonly = true)
+    private DependencyType dependencyType;
+
+    @Parameter(property = "excludeScope", readonly = true)
+    private Set<String> excludeScope;
+
     public void execute() throws MojoExecutionException, MojoFailureException {
-        DependencyResolutionRequest dependencyResolutionRequest = new DefaultDependencyResolutionRequest();
-        dependencyResolutionRequest.setMavenProject(project);
-        dependencyResolutionRequest.setRepositorySession(repositorySystemSession);
-        dependencyResolutionRequest.setResolutionFilter(new DependencyFilter() {
-            public boolean accept(DependencyNode dependencyNode, List<DependencyNode> list) {
-                return true;
-            }
-        });
+        ArtifactConverterFactory artifactConverterFactory = new ArtifactConverterFactory(Paths.get(dependenciesUrlPath));
+        ArtifactConverter artifactConverter = artifactConverterFactory.getArtifactConverter(dependencyType);
 
         try {
-            List<Dependency> dependencies = projectDependenciesResolver.resolve(dependencyResolutionRequest).getDependencies();
-            Path destination = Paths.get(project.getBuild().getDirectory(), "dependencies");
+            List<Dependency> dependencies = projectDependenciesResolver.resolve(buildDependencyResolutionRequest()).getDependencies();
 
-            new DependencyUtils(getLog()).saveDependencies(dependencies, destination);
+            Iterator<Dependency> iterator = dependencies.iterator();
+            while (iterator.hasNext()) {
+                boolean excludeDependency = excludeScope.contains(iterator.next().getScope());
+                if (excludeDependency) {
+                    iterator.remove();
+                }
+            }
 
-            String dependenciesString = new Artifact2JnlpConverter(Paths.get(dependenciesUrlPath)).asString(dependencies);
+            String dependenciesString = artifactConverter.asString(dependencies);
 
             createWriteFileWithDependencies(dependenciesString);
         }
@@ -71,6 +79,20 @@ public class DependencyInjectorMojo extends AbstractMojo {
         catch (IOException e) {
             getLog().error("Error while copying dependencies", e);
         }
+    }
+
+    private DependencyResolutionRequest buildDependencyResolutionRequest() {
+        DependencyResolutionRequest dependencyResolutionRequest = new DefaultDependencyResolutionRequest();
+        dependencyResolutionRequest.setMavenProject(project);
+        dependencyResolutionRequest.setRepositorySession(repositorySystemSession);
+
+        dependencyResolutionRequest.setResolutionFilter(new DependencyFilter() {
+            public boolean accept(DependencyNode dependencyNode, List<DependencyNode> list) {
+                return true;
+            }
+        });
+
+        return dependencyResolutionRequest;
     }
 
     private void createWriteFileWithDependencies(String dependenciesString) throws IOException {

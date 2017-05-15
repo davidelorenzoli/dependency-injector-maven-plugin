@@ -3,7 +3,7 @@ package io.davlor.maven.plugins.dependencyinjector.converter;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.graph.Dependency;
 
-public class Artifactory2AntConverter extends ArtifactConverter {
+public class Artifactory2IvyConverter extends ArtifactConverter {
     private static final String TEMPLATE = "<dependency org=\"{org}\" name=\"{name}\" rev=\"{rev}\"/>";
 
     @Override
